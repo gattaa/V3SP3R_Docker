@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -64,12 +65,20 @@ class OpenRouterClient:
                 assistant_text="Executing requested tool...",
                 command=self._parse_command_json(raw),
             )
+        if text.startswith("{") and text.endswith("}"):
+            return AgentResponse(
+                assistant_text="Executing requested tool...",
+                command=self._parse_command_json(text),
+            )
 
         if not self.api_key:
+            local = self._parse_local_command(text)
+            if local:
+                return local
             return AgentResponse(
                 assistant_text=(
                     "OpenRouter API key not configured. "
-                    "Set OPENROUTER_API_KEY in config.env, or use tool JSON mode."
+                    "Set OPENROUTER_API_KEY in config.env, or use tool JSON mode/local command mode."
                 )
             )
 
@@ -142,7 +151,10 @@ class OpenRouterClient:
 
     def _parse_command_json(self, raw: str) -> ExecuteCommand:
         payload = self._load_json_with_repair(raw)
-        action = CommandAction(payload["action"])
+        try:
+            action = CommandAction(payload["action"])
+        except ValueError as exc:
+            raise ValueError(f"Invalid action: {payload.get('action')}") from exc
         args = CommandArgs(**payload.get("args", {}))
         return ExecuteCommand(
             action=action,
@@ -173,9 +185,12 @@ class OpenRouterClient:
 
         if extracted:
             extracted = self._remove_trailing_commas(extracted)
-            loaded = json.loads(extracted)
-            if isinstance(loaded, dict):
-                return loaded
+            try:
+                loaded = json.loads(extracted)
+                if isinstance(loaded, dict):
+                    return loaded
+            except json.JSONDecodeError as exc:
+                raise ValueError("Unable to parse command JSON after repair attempts") from exc
         raise ValueError("Unable to parse command JSON")
 
     def _extract_first_json_object(self, text: str) -> str | None:
@@ -219,3 +234,127 @@ class OpenRouterClient:
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"HTTP {exc.code}: {body}") from exc
+
+    def _parse_local_command(self, text: str) -> AgentResponse | None:
+        """Offline fallback parser for core terminal commands."""
+        try:
+            parts = shlex.split(text)
+        except ValueError:
+            return None
+        if not parts:
+            return None
+
+        command_name = parts[0].lower()
+        lowered = " ".join(parts).lower()
+
+        if lowered in {"device info", "device_info"}:
+            return AgentResponse(
+                assistant_text="Executing local command...",
+                command=ExecuteCommand(
+                    action=CommandAction.GET_DEVICE_INFO,
+                    args=CommandArgs(),
+                    justification="Local offline command",
+                    expected_effect="Retrieve device info",
+                ),
+            )
+        if lowered in {"storage info", "storage_info"}:
+            return AgentResponse(
+                assistant_text="Executing local command...",
+                command=ExecuteCommand(
+                    action=CommandAction.GET_STORAGE_INFO,
+                    args=CommandArgs(),
+                    justification="Local offline command",
+                    expected_effect="Retrieve storage info",
+                ),
+            )
+        if command_name in {"ls", "dir"}:
+            path = parts[1] if len(parts) > 1 else "/ext"
+            return AgentResponse(
+                assistant_text="Executing local command...",
+                command=ExecuteCommand(
+                    action=CommandAction.LIST_DIRECTORY,
+                    args=CommandArgs(path=path),
+                    justification="Local offline command",
+                    expected_effect=f"List {path}",
+                ),
+            )
+        if command_name in {"cat", "read"}:
+            if len(parts) < 2:
+                return None
+            path = parts[1]
+            return AgentResponse(
+                assistant_text="Executing local command...",
+                command=ExecuteCommand(
+                    action=CommandAction.READ_FILE,
+                    args=CommandArgs(path=path),
+                    justification="Local offline command",
+                    expected_effect=f"Read {path}",
+                ),
+            )
+        if command_name == "mkdir":
+            if len(parts) < 2:
+                return None
+            path = parts[1]
+            return AgentResponse(
+                assistant_text="Executing local command...",
+                command=ExecuteCommand(
+                    action=CommandAction.CREATE_DIRECTORY,
+                    args=CommandArgs(path=path),
+                    justification="Local offline command",
+                    expected_effect=f"Create directory {path}",
+                ),
+            )
+        if command_name == "rm":
+            if len(parts) < 2:
+                return None
+            recursive = "-r" in parts or "--recursive" in parts
+            path = next((part for part in parts[1:] if not part.startswith("-")), None)
+            if not path:
+                return None
+            return AgentResponse(
+                assistant_text="Executing local command...",
+                command=ExecuteCommand(
+                    action=CommandAction.DELETE,
+                    args=CommandArgs(path=path, recursive=recursive),
+                    justification="Local offline command",
+                    expected_effect=f"Delete {path}",
+                ),
+            )
+        if command_name == "mv":
+            if len(parts) < 3:
+                return None
+            return AgentResponse(
+                assistant_text="Executing local command...",
+                command=ExecuteCommand(
+                    action=CommandAction.MOVE,
+                    args=CommandArgs(path=parts[1], destination_path=parts[2]),
+                    justification="Local offline command",
+                    expected_effect=f"Move {parts[1]} to {parts[2]}",
+                ),
+            )
+        if command_name == "cp":
+            if len(parts) < 3:
+                return None
+            return AgentResponse(
+                assistant_text="Executing local command...",
+                command=ExecuteCommand(
+                    action=CommandAction.COPY,
+                    args=CommandArgs(path=parts[1], destination_path=parts[2]),
+                    justification="Local offline command",
+                    expected_effect=f"Copy {parts[1]} to {parts[2]}",
+                ),
+            )
+        if command_name == "cli":
+            command = text[len(parts[0]) :].strip()
+            if not command:
+                return None
+            return AgentResponse(
+                assistant_text="Executing local command...",
+                command=ExecuteCommand(
+                    action=CommandAction.EXECUTE_CLI,
+                    args=CommandArgs(command=command),
+                    justification="Local offline command",
+                    expected_effect=f"Run CLI command: {command}",
+                ),
+            )
+        return None

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import difflib
 import base64
+import binascii
 import time
+import urllib.error
 import urllib.request
 from pathlib import PurePosixPath
 from urllib.parse import urlparse
@@ -266,23 +268,36 @@ class CommandExecutor:
                 raise ValueError(
                     "download_url must be https and hosted on an approved domain"
                 )
-            with urllib.request.urlopen(
-                args.download_url,
-                timeout=self.DOWNLOAD_TIMEOUT_SECONDS,
-            ) as response:
-                payload = response.read()
+            try:
+                with urllib.request.urlopen(
+                    args.download_url,
+                    timeout=self.DOWNLOAD_TIMEOUT_SECONDS,
+                ) as response:
+                    payload = response.read()
+            except urllib.error.HTTPError as exc:
+                raise ValueError(f"Download failed with HTTP {exc.code}") from exc
+            except urllib.error.URLError as exc:
+                raise ValueError(f"Download failed: {exc.reason}") from exc
             if len(payload) > self.MAX_ARTIFACT_BYTES:
                 raise ValueError("Downloaded payload exceeds size limit")
             if hasattr(self.transport, "write_file_bytes"):
                 bytes_written = self.transport.write_file_bytes(args.path, payload)  # type: ignore[attr-defined]
             else:
-                decoded = payload.decode("utf-8")
+                try:
+                    decoded = payload.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise ValueError(
+                        "Transport does not support binary writes and downloaded payload is not UTF-8 text"
+                    ) from exc
                 bytes_written = self.transport.write_file(args.path, decoded)
             return CommandResultData(bytes_written=bytes_written, message=f"Downloaded resource to: {args.path}")
         if a == CommandAction.PUSH_ARTIFACT:
             if not args.path or not args.artifact_data:
                 raise ValueError("path and artifact_data required")
-            payload = base64.b64decode(args.artifact_data)
+            try:
+                payload = base64.b64decode(args.artifact_data, validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise ValueError("Invalid base64 in artifact_data") from exc
             if not args.path.startswith("/ext/"):
                 raise ValueError("Artifact destination must be under /ext/")
             if len(payload) > self.MAX_ARTIFACT_BYTES:
@@ -290,7 +305,12 @@ class CommandExecutor:
             if hasattr(self.transport, "write_file_bytes"):
                 bytes_written = self.transport.write_file_bytes(args.path, payload)  # type: ignore[attr-defined]
             else:
-                decoded = payload.decode("utf-8")
+                try:
+                    decoded = payload.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise ValueError(
+                        "Transport does not support binary writes and artifact payload is not UTF-8 text"
+                    ) from exc
                 bytes_written = self.transport.write_file(args.path, decoded)
             return CommandResultData(bytes_written=bytes_written, message=f"Artifact pushed to: {args.path}")
         if a == CommandAction.BROWSE_REPO:

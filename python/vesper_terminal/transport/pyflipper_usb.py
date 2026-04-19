@@ -90,6 +90,8 @@ class PyFlipperUsbTransport(FlipperTransport):
 
     def execute_cli(self, command: str) -> str:
         self._ensure_connected()
+        if self._serial is None:
+            raise UnsupportedTransportError("USB CLI transport is not connected")
         cmd = command.strip() + "\r\n"
         self._serial.write(cmd.encode("utf-8"))
         self._serial.flush()

@@ -40,3 +40,17 @@ When a command needs approval, type:
 ```text
 tool {"action":"list_directory","args":{"path":"/ext"}}
 ```
+
+## Local command mode (no API key)
+
+When `OPENROUTER_API_KEY` is not set, the CLI supports direct local commands:
+
+```text
+ls /ext
+cat /ext/readme.txt
+mkdir /ext/new_dir
+mv /ext/a.txt /ext/b.txt
+cp /ext/a.txt /ext/c.txt
+rm /ext/c.txt
+cli storage info
+```

@@ -61,6 +61,26 @@ class OpenRouterClientTest(unittest.TestCase):
         self.assertEqual('ok from fallback', response.assistant_text)
         self.assertEqual(2, calls['count'])
 
+    def test_direct_json_without_tool_prefix(self) -> None:
+        client = OpenRouterClient()
+        response = client.chat('{"action":"get_storage_info","args":{}}')
+        self.assertIsNotNone(response.command)
+        self.assertEqual(CommandAction.GET_STORAGE_INFO, response.command.action)
+
+    def test_local_ls_fallback_without_api_key(self) -> None:
+        client = OpenRouterClient()
+        response = client.chat("ls /ext")
+        self.assertIsNotNone(response.command)
+        self.assertEqual(CommandAction.LIST_DIRECTORY, response.command.action)
+        self.assertEqual("/ext", response.command.args.path)
+
+    def test_local_cat_fallback_without_api_key(self) -> None:
+        client = OpenRouterClient()
+        response = client.chat("cat /ext/info.txt")
+        self.assertIsNotNone(response.command)
+        self.assertEqual(CommandAction.READ_FILE, response.command.action)
+        self.assertEqual("/ext/info.txt", response.command.args.path)
+
 
 if __name__ == '__main__':
     unittest.main()

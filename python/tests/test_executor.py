@@ -75,6 +75,34 @@ class ExecutorTest(unittest.TestCase):
         self.assertFalse(approved.success)
         self.assertIn("approved domain", approved.error)
 
+    def test_push_artifact_rejects_invalid_base64(self) -> None:
+        cmd = ExecuteCommand(
+            CommandAction.PUSH_ARTIFACT,
+            CommandArgs(path="/ext/invalid.bin", artifact_data="%%%bad%%%"),
+            "",
+            "",
+        )
+        result = self.executor.execute(cmd, "s6")
+        self.assertTrue(result.requires_confirmation)
+        approved = self.executor.approve(result.pending_approval_id, "s6")
+        self.assertFalse(approved.success)
+        self.assertIn("Invalid base64", approved.error)
+
+    def test_push_artifact_rejects_oversized_payload(self) -> None:
+        raw = b"a" * (self.executor.MAX_ARTIFACT_BYTES + 1)
+        encoded = base64.b64encode(raw).decode("ascii")
+        cmd = ExecuteCommand(
+            CommandAction.PUSH_ARTIFACT,
+            CommandArgs(path="/ext/oversized.bin", artifact_data=encoded),
+            "",
+            "",
+        )
+        result = self.executor.execute(cmd, "s7")
+        self.assertTrue(result.requires_confirmation)
+        approved = self.executor.approve(result.pending_approval_id, "s7")
+        self.assertFalse(approved.success)
+        self.assertIn("size limit", approved.error)
+
     def test_audit_entries_are_persisted(self) -> None:
         cmd = ExecuteCommand(
             CommandAction.LIST_DIRECTORY,
