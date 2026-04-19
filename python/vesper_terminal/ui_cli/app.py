@@ -10,12 +10,12 @@ from vesper_terminal.domain.executor import CommandExecutor
 from vesper_terminal.domain.models import CommandAction
 from vesper_terminal.domain.permission import PermissionService
 from vesper_terminal.domain.risk import RiskAssessor
-from vesper_terminal.transport.mock_momentum import MockMomentumTransport
+from vesper_terminal.transport.factory import create_transport
 
 APPROVAL_PROMPT = "Type YES to approve, or no/reject to deny."
 
 
-def build_agent(data_dir: str) -> VesperAgent:
+def build_agent(data_dir: str) -> tuple[VesperAgent, dict]:
     base = Path(data_dir)
     base.mkdir(parents=True, exist_ok=True)
 
@@ -26,7 +26,7 @@ def build_agent(data_dir: str) -> VesperAgent:
     permission.grant_path_permission("/ext", action=CommandAction.WRITE_FILE)
     permission.grant_path_permission("/ext", action=CommandAction.CREATE_DIRECTORY)
 
-    transport = MockMomentumTransport(str(base / "flipper_mock_fs"))
+    transport, profile = create_transport(config, base)
     risk = RiskAssessor(permission)
     executor = CommandExecutor(
         transport=transport,
@@ -36,15 +36,39 @@ def build_agent(data_dir: str) -> VesperAgent:
         auto_approve_medium=config.get("AUTO_APPROVE_MEDIUM", "false").lower() == "true",
         auto_approve_high=config.get("AUTO_APPROVE_HIGH", "false").lower() == "true",
     )
-    client = OpenRouterClient()
-    return VesperAgent(client=client, executor=executor, persistence=persistence)
+    model_list_raw = config.get(
+        "OPENROUTER_MODELS",
+        "anthropic/claude-sonnet-4,openai/gpt-4o-mini",
+    )
+    models = [
+        model.strip()
+        for model in (model_list_raw or "").split(",")
+        if model.strip()
+    ]
+    client = OpenRouterClient(
+        api_key=config.get("OPENROUTER_API_KEY"),
+        models=models,
+        retries=int(config.get("OPENROUTER_RETRIES", "2") or "2"),
+    )
+    agent = VesperAgent(client=client, executor=executor, persistence=persistence)
+    return agent, profile
 
 
 def run_cli() -> None:
-    agent = build_agent(str(Path.home() / ".vesper_terminal"))
-    print("V3SP3R Terminal (Python migration, Momentum-first mock transport)")
+    agent, profile = build_agent(str(Path.home() / ".vesper_terminal"))
+    print("V3SP3R Terminal (Python migration)")
     print("Commands: new | retry | history | quit")
     print("Tool mode: tool {\"action\":\"list_directory\",\"args\":{\"path\":\"/ext\"}}")
+    print(
+        "Transport:",
+        profile.get("transport_mode", "unknown"),
+        f"(firmware={profile.get('firmware_family', 'unknown')})",
+    )
+    if profile.get("mock_mode"):
+        print("⚠ mock mode enabled for transport-dependent actions.")
+    if not profile.get("supports_cli", False):
+        reason = profile.get("unsupported_reason", "CLI unavailable")
+        print(f"⚠ transport limitations: {reason}")
 
     pending_approval: str | None = None
 

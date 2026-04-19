@@ -36,6 +36,19 @@ class ExecutorTest(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("not found or expired", result.error)
 
+    def test_launch_app_maps_to_loader_open_cli(self) -> None:
+        cmd = ExecuteCommand(
+            CommandAction.LAUNCH_APP,
+            CommandArgs(app_name="Infrared"),
+            "",
+            "",
+        )
+        result = self.executor.execute(cmd, "s3")
+        self.assertTrue(result.requires_confirmation)
+        approved = self.executor.approve(result.pending_approval_id, "s3")
+        self.assertTrue(approved.success)
+        self.assertIn("app launched", approved.data.content.lower())
+
     def test_audit_entries_are_persisted(self) -> None:
         cmd = ExecuteCommand(
             CommandAction.LIST_DIRECTORY,

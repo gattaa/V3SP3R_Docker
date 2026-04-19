@@ -47,6 +47,11 @@ class MockMomentumTransport(FlipperTransport):
         target.write_text(content, encoding="utf-8")
         return len(content.encode("utf-8"))
 
+    def write_file_bytes(self, path: str, payload: bytes) -> int:
+        target = self._resolve(path)
+        target.write_bytes(payload)
+        return len(payload)
+
     def create_directory(self, path: str) -> None:
         self._resolve(path).mkdir(parents=True, exist_ok=True)
 
@@ -126,4 +131,5 @@ class MockMomentumTransport(FlipperTransport):
             "supports_rpc": True,
             "supports_rpc_app_bridge": True,
             "platform_hint": "linux_macos",
+            "mock_mode": True,
         }

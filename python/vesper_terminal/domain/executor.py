@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import difflib
+import base64
 import time
+import urllib.request
 from pathlib import PurePosixPath
 from typing import Optional
 
@@ -188,26 +190,124 @@ class CommandExecutor:
             return CommandResultData(content=f"[mock forge payload]\nPrompt: {prompt}")
         if a == CommandAction.REQUEST_PHOTO:
             return CommandResultData(content="[mock glasses photo capture]")
-        if a in {
-            CommandAction.LAUNCH_APP,
-            CommandAction.SUBGHZ_TRANSMIT,
-            CommandAction.IR_TRANSMIT,
-            CommandAction.NFC_EMULATE,
-            CommandAction.RFID_EMULATE,
-            CommandAction.IBUTTON_EMULATE,
-            CommandAction.BADUSB_EXECUTE,
-            CommandAction.BLE_SPAM,
-            CommandAction.LED_CONTROL,
-            CommandAction.VIBRO_CONTROL,
-            CommandAction.DOWNLOAD_RESOURCE,
-            CommandAction.BROWSE_REPO,
-            CommandAction.GITHUB_SEARCH,
-            CommandAction.PUSH_ARTIFACT,
-            CommandAction.INSTALL_FAPHUB_APP,
-            CommandAction.LIST_VAULT,
-            CommandAction.RUN_RUNBOOK,
-        }:
-            return CommandResultData(content=f"[mocked action] {a.value}", message="Mock mode")
+        if a == CommandAction.LAUNCH_APP:
+            app_name = args.app_name or args.command
+            if not app_name:
+                raise ValueError("App name required")
+            app_args = args.app_args or ""
+            cmd = f"loader open {app_name} {app_args}".strip()
+            return CommandResultData(
+                content=self.transport.execute_cli(cmd),
+                message=f"Launched app: {app_name}",
+            )
+        if a == CommandAction.SUBGHZ_TRANSMIT:
+            if not args.path:
+                raise ValueError("SubGHz path required")
+            cmd = f"subghz tx {args.path}"
+            return CommandResultData(content=self.transport.execute_cli(cmd), message=f"Transmitted SubGHz: {args.path}")
+        if a == CommandAction.IR_TRANSMIT:
+            if not args.path:
+                raise ValueError("IR path required")
+            cmd = f"ir tx {args.path}"
+            if args.signal_name:
+                cmd += f" {args.signal_name}"
+            return CommandResultData(content=self.transport.execute_cli(cmd), message=f"Transmitted IR: {args.path}")
+        if a == CommandAction.NFC_EMULATE:
+            if not args.path:
+                raise ValueError("NFC path required")
+            cmd = f"nfc emulate {args.path}"
+            return CommandResultData(content=self.transport.execute_cli(cmd), message=f"NFC emulation started: {args.path}")
+        if a == CommandAction.RFID_EMULATE:
+            if not args.path:
+                raise ValueError("RFID path required")
+            cmd = f"rfid emulate {args.path}"
+            return CommandResultData(content=self.transport.execute_cli(cmd), message=f"RFID emulation started: {args.path}")
+        if a == CommandAction.IBUTTON_EMULATE:
+            if not args.path:
+                raise ValueError("iButton path required")
+            cmd = f"ibutton emulate {args.path}"
+            return CommandResultData(content=self.transport.execute_cli(cmd), message=f"iButton emulation started: {args.path}")
+        if a == CommandAction.BADUSB_EXECUTE:
+            if not args.path:
+                raise ValueError("BadUSB script path required")
+            cmd = f"badusb run {args.path}"
+            return CommandResultData(content=self.transport.execute_cli(cmd), message=f"BadUSB execution started: {args.path}")
+        if a == CommandAction.BLE_SPAM:
+            arg = (args.app_args or args.command or "").strip()
+            cmd = f"ble_spam {arg}".strip()
+            return CommandResultData(content=self.transport.execute_cli(cmd), message="BLE spam command sent")
+        if a == CommandAction.LED_CONTROL:
+            r = args.red if args.red is not None else 0
+            g = args.green if args.green is not None else 0
+            b = args.blue if args.blue is not None else 0
+            cmd = f"led {r} {g} {b}"
+            return CommandResultData(content=self.transport.execute_cli(cmd), message=f"LED set to RGB({r},{g},{b})")
+        if a == CommandAction.VIBRO_CONTROL:
+            enabled = args.enabled if args.enabled is not None else True
+            cmd = f"vibro {1 if enabled else 0}"
+            return CommandResultData(content=self.transport.execute_cli(cmd), message=f"Vibro {'on' if enabled else 'off'}")
+        if a == CommandAction.DOWNLOAD_RESOURCE:
+            if not args.download_url or not args.path:
+                raise ValueError("download_url and destination path required")
+            with urllib.request.urlopen(args.download_url, timeout=30) as response:
+                payload = response.read()
+            if hasattr(self.transport, "write_file_bytes"):
+                bytes_written = self.transport.write_file_bytes(args.path, payload)  # type: ignore[attr-defined]
+            else:
+                decoded = payload.decode("utf-8")
+                bytes_written = self.transport.write_file(args.path, decoded)
+            return CommandResultData(bytes_written=bytes_written, message=f"Downloaded resource to: {args.path}")
+        if a == CommandAction.PUSH_ARTIFACT:
+            if not args.path or not args.artifact_data:
+                raise ValueError("path and artifact_data required")
+            payload = base64.b64decode(args.artifact_data)
+            if hasattr(self.transport, "write_file_bytes"):
+                bytes_written = self.transport.write_file_bytes(args.path, payload)  # type: ignore[attr-defined]
+            else:
+                decoded = payload.decode("utf-8")
+                bytes_written = self.transport.write_file(args.path, decoded)
+            return CommandResultData(bytes_written=bytes_written, message=f"Artifact pushed to: {args.path}")
+        if a == CommandAction.BROWSE_REPO:
+            repo = (args.repo_id or args.command or "").strip()
+            sub_path = (args.sub_path or "").strip()
+            if not repo:
+                raise ValueError("repo_id required")
+            return CommandResultData(
+                content=f"[mock catalog] repo={repo} path={sub_path or '/'}",
+                message="Repository catalog browse (mock mode)",
+            )
+        if a == CommandAction.GITHUB_SEARCH:
+            query = (args.command or "").strip()
+            scope = (args.search_scope or "code").strip()
+            if not query:
+                raise ValueError("Search query required")
+            return CommandResultData(
+                content=f"[mock github {scope} search] {query}",
+                message="GitHub search (mock mode)",
+            )
+        if a == CommandAction.LIST_VAULT:
+            filter_value = (args.filter or "").strip()
+            path_value = (args.path or "/ext").strip()
+            return CommandResultData(
+                content=f"[mock vault listing] path={path_value} filter={filter_value or '*'}",
+                message="Vault listing (mock mode)",
+            )
+        if a == CommandAction.RUN_RUNBOOK:
+            runbook_id = (args.runbook_id or args.command or "").strip()
+            if not runbook_id:
+                raise ValueError("runbook_id required")
+            return CommandResultData(
+                content=f"[mock runbook] {runbook_id}",
+                message=f"Runbook executed (mock): {runbook_id}",
+            )
+        if a == CommandAction.INSTALL_FAPHUB_APP:
+            app = (args.command or "").strip()
+            if not app:
+                raise ValueError("App id/name required")
+            return CommandResultData(
+                content=f"[mock install] {app}",
+                message=f"FapHub install requested (mock): {app}",
+            )
 
         raise ValueError(f"Unsupported action: {a.value}")
 

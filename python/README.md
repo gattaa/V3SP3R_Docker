@@ -16,6 +16,18 @@ cd python
 python3 main.py
 ```
 
+## Config (`~/.vesper_terminal/config.env`)
+
+Supported keys:
+
+- `OPENROUTER_API_KEY=sk-or-...`
+- `OPENROUTER_MODELS=anthropic/claude-sonnet-4,openai/gpt-4o-mini`
+- `OPENROUTER_RETRIES=2`
+- `TRANSPORT_MODE=mock` or `TRANSPORT_MODE=usb`
+- `USB_DEVICE_PATH=/dev/ttyACM0`
+- `USB_BAUD_RATE=230400`
+- `ALLOW_MOCK_FALLBACK=true`
+
 ## Confirmation flow
 
 When a command needs approval, type:
