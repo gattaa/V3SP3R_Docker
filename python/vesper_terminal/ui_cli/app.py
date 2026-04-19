@@ -12,6 +12,8 @@ from vesper_terminal.domain.permission import PermissionService
 from vesper_terminal.domain.risk import RiskAssessor
 from vesper_terminal.transport.mock_momentum import MockMomentumTransport
 
+APPROVAL_PROMPT = "Type YES to approve, or no/reject to deny."
+
 
 def build_agent(data_dir: str) -> VesperAgent:
     base = Path(data_dir)
@@ -52,17 +54,17 @@ def run_cli() -> None:
             continue
 
         if pending_approval:
-            if raw.upper() == "YES":
+            if raw.lower() == "yes":
                 result = agent.executor.approve(pending_approval, agent.session_id)
                 print("✅ approved" if result.success else f"❌ {result.error}")
                 pending_approval = None
                 continue
             if raw.lower() in {"no", "reject"}:
                 result = agent.executor.reject(pending_approval, agent.session_id)
-                print("🚫 rejected" if not result.success else "Rejected")
+                print("🚫 rejected")
                 pending_approval = None
                 continue
-            print("Type YES to approve, or no/reject to deny.")
+            print(APPROVAL_PROMPT)
             continue
 
         if raw == "quit":
@@ -76,7 +78,7 @@ def run_cli() -> None:
             print(text)
             if pending:
                 pending_approval = pending
-                print("Type YES to approve, or no/reject to deny.")
+                print(APPROVAL_PROMPT)
             continue
         if raw == "history":
             for role, content in agent.persistence.history(agent.session_id, limit=20):
@@ -87,7 +89,7 @@ def run_cli() -> None:
         print(text)
         if pending:
             pending_approval = pending
-            print("Type YES to approve, or no/reject to deny.")
+            print(APPROVAL_PROMPT)
 
 
 if __name__ == "__main__":

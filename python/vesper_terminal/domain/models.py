@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from time import time
 from typing import Optional
 from uuid import uuid4
-import time
 
 
 class RiskLevel(str, Enum):
@@ -112,7 +112,7 @@ class CommandResultData:
 @dataclass
 class CommandResult:
     success: bool
-    action: CommandAction
+    action: Optional[CommandAction]
     data: Optional[CommandResultData] = None
     error: Optional[str] = None
     execution_time_ms: int = 0
@@ -134,9 +134,9 @@ class RiskAssessment:
 class PendingApproval:
     command: ExecuteCommand
     risk_assessment: RiskAssessment
-    created_at: float = field(default_factory=lambda: time.time())
+    created_at: float = field(default_factory=lambda: time())
     id: str = field(default_factory=lambda: str(uuid4()))
-    expires_at: float = field(default_factory=lambda: time.time() + 120)
+    expires_at: float = field(default_factory=lambda: time() + 120)
     diff: Optional[FileDiff] = None
 
 
@@ -163,4 +163,4 @@ class AuditEntry:
     user_approved: Optional[bool] = None
     metadata: dict[str, str] = field(default_factory=dict)
     id: str = field(default_factory=lambda: str(uuid4()))
-    timestamp: int = field(default_factory=lambda: int(time.time() * 1000))
+    timestamp: int = field(default_factory=lambda: int(time() * 1000))

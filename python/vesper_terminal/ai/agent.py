@@ -32,11 +32,23 @@ class VesperAgent:
             result = self.executor.execute(response.command, self.session_id)
             if result.requires_confirmation:
                 pending_id = result.pending_approval_id
-                assistant_text = (result.data.message if result.data and result.data.message else "Approval required") + f"\nPending approval id: {pending_id}"
+                approval_message = (
+                    result.data.message
+                    if result.data and result.data.message
+                    else "Approval required"
+                )
+                assistant_text = (
+                    f"{approval_message}\nPending approval id: {pending_id}"
+                )
                 if result.data and result.data.diff:
                     assistant_text += "\n\nDiff preview:\n" + result.data.diff.unified_diff
             elif result.success:
-                rendered = result.data.content if result.data and result.data.content else result.data.message if result.data else "Done"
+                if result.data and result.data.content:
+                    rendered = result.data.content
+                elif result.data and result.data.message:
+                    rendered = result.data.message
+                else:
+                    rendered = "Done"
                 assistant_text = f"✅ {rendered}"
             else:
                 assistant_text = f"❌ {result.error}"

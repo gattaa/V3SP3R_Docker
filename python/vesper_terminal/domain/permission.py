@@ -13,7 +13,7 @@ class Permission:
     expires_at: float
 
     def is_valid(self) -> bool:
-        return time() <= self.expires_at
+        return time() < self.expires_at
 
     def matches(self, path: str, action: CommandAction) -> bool:
         return self.is_valid() and action == self.action and path.startswith(self.path_prefix)
@@ -37,9 +37,9 @@ class PermissionService:
     def is_protected_path_unlocked(self, path: str) -> bool:
         self._cleanup()
         expires = self._unlocked.get(path)
-        return bool(expires and expires >= time())
+        return bool(expires and expires > time())
 
     def _cleanup(self) -> None:
         now = time()
-        self._permissions = [p for p in self._permissions if p.expires_at >= now]
-        self._unlocked = {k: v for k, v in self._unlocked.items() if v >= now}
+        self._permissions = [p for p in self._permissions if p.expires_at > now]
+        self._unlocked = {k: v for k, v in self._unlocked.items() if v > now}

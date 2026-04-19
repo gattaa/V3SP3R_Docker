@@ -15,7 +15,15 @@ class RiskAssessor:
 
     def assess(self, command: ExecuteCommand) -> RiskAssessment:
         paths = self._extract_paths(command)
-        blocked = next((p for p in paths if self._is_protected(p) and not self.permission_service.is_protected_path_unlocked(p)), None)
+        blocked = next(
+            (
+                p
+                for p in paths
+                if self._is_protected(p)
+                and not self.permission_service.is_protected_path_unlocked(p)
+            ),
+            None,
+        )
         if blocked:
             return RiskAssessment(
                 level=RiskLevel.BLOCKED,
@@ -65,8 +73,18 @@ class RiskAssessor:
                 requires_confirmation=not in_scope,
             )
 
-        if action in {CommandAction.DELETE, CommandAction.MOVE, CommandAction.RENAME, CommandAction.BADUSB_EXECUTE, CommandAction.INSTALL_FAPHUB_APP}:
-            reason = "Recursive deletion" if action == CommandAction.DELETE and command.args.recursive else f"{action.value} operation"
+        if action in {
+            CommandAction.DELETE,
+            CommandAction.MOVE,
+            CommandAction.RENAME,
+            CommandAction.BADUSB_EXECUTE,
+            CommandAction.INSTALL_FAPHUB_APP,
+        }:
+            reason = (
+                "Recursive deletion"
+                if action == CommandAction.DELETE and command.args.recursive
+                else f"{action.value} operation"
+            )
             return RiskAssessment(RiskLevel.HIGH, reason, paths, False, True)
 
         if action == CommandAction.COPY:
@@ -94,7 +112,13 @@ class RiskAssessor:
             CommandAction.BLE_SPAM,
             CommandAction.EXECUTE_CLI,
         }:
-            return RiskAssessment(RiskLevel.MEDIUM, "Potentially state-changing operation", paths, False, True)
+            return RiskAssessment(
+                RiskLevel.MEDIUM,
+                "Potentially state-changing operation",
+                paths,
+                False,
+                True,
+            )
 
         return RiskAssessment(RiskLevel.HIGH, "Unclassified operation", paths, False, True)
 
@@ -110,7 +134,11 @@ class RiskAssessor:
         return paths
 
     def _is_protected(self, path: str) -> bool:
-        return any(path.startswith(p) for p in SYSTEM_PATHS) or any(path.startswith(p) for p in FIRMWARE_PATHS) or any(path.endswith(ext) for ext in SENSITIVE_EXTENSIONS)
+        return (
+            any(path.startswith(p) for p in SYSTEM_PATHS)
+            or any(path.startswith(p) for p in FIRMWARE_PATHS)
+            or any(path.endswith(ext) for ext in SENSITIVE_EXTENSIONS)
+        )
 
     def _blocked_reason(self, path: str) -> str:
         if any(path.startswith(p) for p in SYSTEM_PATHS):

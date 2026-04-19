@@ -13,6 +13,7 @@ class PlaintextConfigStore:
             self.path.write_text("", encoding="utf-8")
 
     def load(self) -> dict[str, str]:
+        # Format: KEY=VALUE (first '=' is the delimiter; the remainder stays in VALUE).
         out: dict[str, str] = {}
         for line in self.path.read_text(encoding="utf-8").splitlines():
             line = line.strip()

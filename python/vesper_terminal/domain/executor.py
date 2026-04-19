@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import time
+from pathlib import PurePosixPath
 from typing import Optional
 
 from .models import (
@@ -13,6 +14,7 @@ from .models import (
     ExecuteCommand,
     FileDiff,
     PendingApproval,
+    RiskAssessment,
     RiskLevel,
 )
 from .permission import PermissionService
@@ -42,7 +44,7 @@ class CommandExecutor:
     def execute(self, command: ExecuteCommand, session_id: str) -> CommandResult:
         self._clear_expired_approvals()
         self._audit(AuditEntry(action_type=AuditActionType.COMMAND_RECEIVED, command=command, session_id=session_id))
-        start = time.time()
+        start_time = time.time()
         risk = self.risk_assessor.assess(command)
 
         if risk.level == RiskLevel.BLOCKED:
@@ -56,9 +58,14 @@ class CommandExecutor:
         if risk.level == RiskLevel.HIGH and not self.auto_approve_high:
             return self._request_approval(command, risk, session_id)
 
-        return self._execute_direct(command, session_id, risk.level, start)
+        return self._execute_direct(command, session_id, risk.level, start_time)
 
-    def _request_approval(self, command: ExecuteCommand, risk, session_id: str) -> CommandResult:
+    def _request_approval(
+        self,
+        command: ExecuteCommand,
+        risk: RiskAssessment,
+        session_id: str,
+    ) -> CommandResult:
         diff: Optional[FileDiff] = None
         if command.action == CommandAction.WRITE_FILE and command.args.path and command.args.content is not None:
             old_content = None
@@ -83,7 +90,7 @@ class CommandExecutor:
         self._clear_expired_approvals()
         pending = self.pending.pop(approval_id, None)
         if not pending:
-            result = CommandResult(False, CommandAction.LIST_DIRECTORY, error="Approval not found or expired")
+            result = CommandResult(False, None, error="Approval not found or expired")
             self._audit(AuditEntry(action_type=AuditActionType.APPROVAL_TIMEOUT, session_id=session_id, result=result, metadata={"approval_id": approval_id}))
             return result
 
@@ -94,7 +101,7 @@ class CommandExecutor:
         self._clear_expired_approvals()
         pending = self.pending.pop(approval_id, None)
         if not pending:
-            result = CommandResult(False, CommandAction.LIST_DIRECTORY, error="Approval not found or expired")
+            result = CommandResult(False, None, error="Approval not found or expired")
             self._audit(AuditEntry(action_type=AuditActionType.APPROVAL_TIMEOUT, session_id=session_id, result=result, metadata={"approval_id": approval_id}))
             return result
 
@@ -154,18 +161,22 @@ class CommandExecutor:
         if a == CommandAction.RENAME:
             if not args.path or not args.new_name:
                 raise ValueError("Path and new_name required")
-            parent = args.path.rsplit("/", 1)[0]
-            self.transport.move(args.path, f"{parent}/{args.new_name}")
+            source_path = PurePosixPath(args.path)
+            destination = str(source_path.parent / args.new_name)
+            self.transport.move(args.path, destination)
             return CommandResultData(message=f"Renamed to: {args.new_name}")
         if a == CommandAction.GET_DEVICE_INFO:
             return CommandResultData(device_info=self.transport.get_device_info())
         if a == CommandAction.GET_STORAGE_INFO:
             return CommandResultData(storage_info=self.transport.get_storage_info())
         if a == CommandAction.EXECUTE_CLI:
-            command_text = args.command or args.content
-            if not command_text:
+            cli_command_text = args.command or args.content
+            if not cli_command_text:
                 raise ValueError("CLI command required")
-            return CommandResultData(content=self.transport.execute_cli(command_text), message=f"Executed CLI command: {command_text}")
+            return CommandResultData(
+                content=self.transport.execute_cli(cli_command_text),
+                message=f"Executed CLI command: {cli_command_text}",
+            )
         if a == CommandAction.SEARCH_FAPHUB:
             q = (args.command or "").strip()
             return CommandResultData(content=f"FapHub matches for '{q}':\n1. wifi_marauder\n2. evil_portal")
@@ -210,7 +221,7 @@ class CommandExecutor:
 
     def _clear_expired_approvals(self) -> None:
         now = time.time()
-        self.pending = {k: v for k, v in self.pending.items() if v.expires_at >= now}
+        self.pending = {k: v for k, v in self.pending.items() if v.expires_at > now}
 
     def _audit(self, entry: AuditEntry) -> None:
         self.persistence.save_audit(entry)

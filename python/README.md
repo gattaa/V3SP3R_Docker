@@ -12,7 +12,7 @@ This directory contains the initial Python terminal migration scaffold that mirr
 ## Run
 
 ```bash
-cd /home/runner/work/V3SP3R_Docker/V3SP3R_Docker/python
+cd python
 python3 main.py
 ```
 

@@ -16,7 +16,10 @@ class MockMomentumTransport(FlipperTransport):
 
     def _resolve(self, path: str) -> Path:
         cleaned = path.lstrip("/")
-        target = self.root / cleaned
+        target = (self.root / cleaned).resolve()
+        root_resolved = self.root.resolve()
+        if root_resolved not in target.parents and target != root_resolved:
+            raise ValueError(f"Path escapes mock root: {path}")
         target.parent.mkdir(parents=True, exist_ok=True)
         return target
 
@@ -64,9 +67,11 @@ class MockMomentumTransport(FlipperTransport):
         d = self._resolve(dest)
         if s.is_dir():
             if d.exists():
-                shutil.rmtree(d)
+                raise FileExistsError(f"Destination already exists: {dest}")
             shutil.copytree(s, d)
         else:
+            if d.exists():
+                raise FileExistsError(f"Destination already exists: {dest}")
             shutil.copy2(s, d)
 
     def execute_cli(self, command: str) -> str:
@@ -75,7 +80,16 @@ class MockMomentumTransport(FlipperTransport):
             return "Momentum firmware mock 1.0.0"
         if normalized.startswith("loader open"):
             return f"app launched: {command}"
-        if normalized.startswith(("subghz tx", "ir tx", "nfc emulate", "rfid emulate", "ibutton emulate", "badusb run")):
+        if normalized.startswith(
+            (
+                "subghz tx",
+                "ir tx",
+                "nfc emulate",
+                "rfid emulate",
+                "ibutton emulate",
+                "badusb run",
+            )
+        ):
             return f"executed on mock momentum transport: {command}"
         if normalized.startswith("storage ls"):
             parts = command.split(maxsplit=2)

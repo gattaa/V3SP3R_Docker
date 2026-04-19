@@ -36,6 +36,23 @@ class ExecutorTest(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertIn("not found or expired", result.error)
 
+    def test_audit_entries_are_persisted(self) -> None:
+        cmd = ExecuteCommand(
+            CommandAction.LIST_DIRECTORY,
+            CommandArgs(path="/ext"),
+            "",
+            "",
+        )
+        result = self.executor.execute(cmd, "audit-session")
+        self.assertTrue(result.success)
+
+        with self.persistence._conn() as conn:  # noqa: SLF001 - acceptable for test inspection
+            count = conn.execute(
+                "SELECT COUNT(*) FROM audit_entries WHERE session_id = ?",
+                ("audit-session",),
+            ).fetchone()[0]
+        self.assertGreaterEqual(count, 2)  # command_received + command_executed
+
 
 if __name__ == "__main__":
     unittest.main()
