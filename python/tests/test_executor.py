@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import base64
 from pathlib import Path
 
 from vesper_terminal.data.persistence import SqlitePersistence
@@ -49,6 +50,31 @@ class ExecutorTest(unittest.TestCase):
         self.assertTrue(approved.success)
         self.assertIn("app launched", approved.data.content.lower())
 
+    def test_push_artifact_rejects_non_ext_path(self) -> None:
+        encoded = base64.b64encode(b"payload").decode("ascii")
+        cmd = ExecuteCommand(
+            CommandAction.PUSH_ARTIFACT,
+            CommandArgs(path="/int/evil.bin", artifact_data=encoded),
+            "",
+            "",
+        )
+        result = self.executor.execute(cmd, "s4")
+        self.assertFalse(result.success)
+        self.assertIn("Blocked", result.error)
+
+    def test_download_resource_rejects_unapproved_domain(self) -> None:
+        cmd = ExecuteCommand(
+            CommandAction.DOWNLOAD_RESOURCE,
+            CommandArgs(download_url="https://example.com/file.ir", path="/ext/infrared/file.ir"),
+            "",
+            "",
+        )
+        result = self.executor.execute(cmd, "s5")
+        self.assertTrue(result.requires_confirmation)
+        approved = self.executor.approve(result.pending_approval_id, "s5")
+        self.assertFalse(approved.success)
+        self.assertIn("approved domain", approved.error)
+
     def test_audit_entries_are_persisted(self) -> None:
         cmd = ExecuteCommand(
             CommandAction.LIST_DIRECTORY,
@@ -59,7 +85,7 @@ class ExecutorTest(unittest.TestCase):
         result = self.executor.execute(cmd, "audit-session")
         self.assertTrue(result.success)
 
-        with self.persistence._conn() as conn:  # noqa: SLF001 - acceptable for test inspection
+        with self.persistence._conn() as conn:
             count = conn.execute(
                 "SELECT COUNT(*) FROM audit_entries WHERE session_id = ?",
                 ("audit-session",),

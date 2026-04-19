@@ -91,7 +91,7 @@ class OpenRouterClient:
                     }
                     response = self._requester(self.api_key or "", payload, self.timeout_seconds)
                     return self._parse_model_response(response)
-                except Exception as exc:  # noqa: BLE001 - fallback loop handles transient failures
+                except Exception as exc:
                     last_error = str(exc)
                     continue
 
@@ -135,7 +135,7 @@ class OpenRouterClient:
                     assistant_text="Executing extracted inline command...",
                     command=self._parse_command_json(content_text),
                 )
-            except Exception:
+            except ValueError:
                 pass
 
         return AgentResponse(assistant_text=content_text or "No response content.")
@@ -155,7 +155,13 @@ class OpenRouterClient:
         text = raw.strip()
         text = text.replace("```json", "").replace("```", "").strip()
 
-        for candidate in (text, self._extract_first_json_object(text), self._remove_trailing_commas(text)):
+        candidates = [text]
+        extracted = self._extract_first_json_object(text)
+        if extracted:
+            candidates.append(extracted)
+        candidates.append(self._remove_trailing_commas(text))
+
+        for candidate in candidates:
             if not candidate:
                 continue
             try:
@@ -165,7 +171,6 @@ class OpenRouterClient:
             except json.JSONDecodeError:
                 continue
 
-        extracted = self._extract_first_json_object(text)
         if extracted:
             extracted = self._remove_trailing_commas(extracted)
             loaded = json.loads(extracted)

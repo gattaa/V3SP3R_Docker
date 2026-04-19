@@ -5,6 +5,7 @@ import base64
 import time
 import urllib.request
 from pathlib import PurePosixPath
+from urllib.parse import urlparse
 from typing import Optional
 
 from .models import (
@@ -26,6 +27,17 @@ from vesper_terminal.data.persistence import SqlitePersistence
 
 
 class CommandExecutor:
+    # 5MB cap is a conservative migration-era limit: it bounds memory usage for
+    # base64 decode/download buffers and avoids oversized writes over mock/USB
+    # transport before chunked transfer support is implemented.
+    MAX_ARTIFACT_BYTES = 5 * 1024 * 1024
+    DOWNLOAD_TIMEOUT_SECONDS = 30
+    ALLOWED_DOWNLOAD_HOSTS = {
+        "raw.githubusercontent.com",
+        "github.com",
+        "gist.githubusercontent.com",
+    }
+
     def __init__(
         self,
         transport: FlipperTransport,
@@ -73,7 +85,7 @@ class CommandExecutor:
             old_content = None
             try:
                 old_content = self.transport.read_file(command.args.path)
-            except Exception:
+            except (FileNotFoundError, OSError, RuntimeError, ValueError):
                 old_content = None
             diff = self._compute_diff(old_content, command.args.content)
 
@@ -249,8 +261,18 @@ class CommandExecutor:
         if a == CommandAction.DOWNLOAD_RESOURCE:
             if not args.download_url or not args.path:
                 raise ValueError("download_url and destination path required")
-            with urllib.request.urlopen(args.download_url, timeout=30) as response:
+            parsed = urlparse(args.download_url)
+            if parsed.scheme != "https" or parsed.hostname not in self.ALLOWED_DOWNLOAD_HOSTS:
+                raise ValueError(
+                    "download_url must be https and hosted on an approved domain"
+                )
+            with urllib.request.urlopen(
+                args.download_url,
+                timeout=self.DOWNLOAD_TIMEOUT_SECONDS,
+            ) as response:
                 payload = response.read()
+            if len(payload) > self.MAX_ARTIFACT_BYTES:
+                raise ValueError("Downloaded payload exceeds size limit")
             if hasattr(self.transport, "write_file_bytes"):
                 bytes_written = self.transport.write_file_bytes(args.path, payload)  # type: ignore[attr-defined]
             else:
@@ -261,6 +283,10 @@ class CommandExecutor:
             if not args.path or not args.artifact_data:
                 raise ValueError("path and artifact_data required")
             payload = base64.b64decode(args.artifact_data)
+            if not args.path.startswith("/ext/"):
+                raise ValueError("Artifact destination must be under /ext/")
+            if len(payload) > self.MAX_ARTIFACT_BYTES:
+                raise ValueError("Artifact payload exceeds size limit")
             if hasattr(self.transport, "write_file_bytes"):
                 bytes_written = self.transport.write_file_bytes(args.path, payload)  # type: ignore[attr-defined]
             else:

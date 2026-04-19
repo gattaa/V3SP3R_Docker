@@ -26,9 +26,12 @@ class PyFlipperUsbTransport(FlipperTransport):
     compatibility is validated against real Momentum firmware.
     """
 
+    MAX_IDLE_ROUNDS = 2
+
     def __init__(self, config: UsbTransportConfig) -> None:
         self.config = config
         self._serial = None
+        self._serial_module = None
         self._profile = self._probe_capabilities()
 
     def _probe_capabilities(self) -> dict:
@@ -45,23 +48,27 @@ class PyFlipperUsbTransport(FlipperTransport):
             import serial  # type: ignore
 
             self._serial_module = serial
-        except Exception:
+        except ImportError:
             profile["unsupported_reason"] = (
                 "pyserial is not installed; install it to enable USB transport"
             )
             return profile
 
         try:
-            ser = self._serial_module.Serial(
+            with self._serial_module.Serial(
                 self.config.device_path,
                 self.config.baud_rate,
                 timeout=self.config.read_timeout_s,
-            )
-            ser.close()
+            ):
+                pass
             profile["supports_cli"] = True
             profile["connected"] = True
             return profile
-        except Exception as exc:  # noqa: BLE001 - probe status should be soft-fail
+        except (
+            getattr(self._serial_module, "SerialException", OSError),
+            OSError,
+            ValueError,
+        ) as exc:
             profile["unsupported_reason"] = str(exc)
             return profile
 
@@ -89,7 +96,7 @@ class PyFlipperUsbTransport(FlipperTransport):
 
         lines: list[str] = []
         idle_rounds = 0
-        while idle_rounds < 2:
+        while idle_rounds < self.MAX_IDLE_ROUNDS:
             raw = self._serial.readline()
             if not raw:
                 idle_rounds += 1
